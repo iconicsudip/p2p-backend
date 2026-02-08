@@ -1,8 +1,8 @@
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import multer from "multer";
+import fs from "fs";
+import type { Request } from "express";
 
-const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+const uploadDir = process.env.UPLOAD_DIR || "uploads";
 
 // Create upload directory if it doesn't exist
 if (!fs.existsSync(uploadDir)) {
@@ -11,13 +11,22 @@ if (!fs.existsSync(uploadDir)) {
 
 const storage = multer.memoryStorage();
 
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+const fileFilter = (
+    req: Request,
+    file: Express.Multer.File,
+    cb: multer.FileFilterCallback
+) => {
+    const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/jpg",
+        "application/pdf",
+    ];
 
     if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error('Invalid file type. Only JPEG, PNG, and PDF are allowed.'));
+        cb(new Error("Invalid file type. Only JPEG, PNG, and PDF are allowed."));
     }
 };
 
@@ -25,6 +34,6 @@ export const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'), // 5MB default
+        fileSize: parseInt(process.env.MAX_FILE_SIZE || "5242880"), // 5MB
     },
 });
