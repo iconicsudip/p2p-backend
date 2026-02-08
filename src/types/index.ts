@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { ParsedQs } from 'qs';
 
 export enum UserRole {
     SUPER_ADMIN = 'SUPER_ADMIN',
@@ -57,13 +58,18 @@ export interface BankDetails {
     accountHolderName?: string;
 }
 
-export interface AuthRequest extends Request {
+export type AuthRequest = Request<
+    any,          // params
+    any,          // res body
+    any,          // req body
+    ParsedQs      // query
+> & {
     user?: {
         id: string;
         email: string;
         role: UserRole;
     };
-}
+};
 
 export interface JWTPayload {
     id: string;
