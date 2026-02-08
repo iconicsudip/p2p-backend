@@ -11,10 +11,10 @@ if (!fs.existsSync(uploadDir)) {
 
 const storage = multer.memoryStorage();
 
-const fileFilter = (
+const fileFilter: multer.Options["fileFilter"] = (
     req: Request,
-    file: Express.Multer.File,
-    cb: multer.FileFilterCallback
+    file,
+    cb
 ) => {
     const allowedTypes = [
         "image/jpeg",
