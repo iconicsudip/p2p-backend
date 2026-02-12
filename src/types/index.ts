@@ -66,13 +66,13 @@ export type AuthRequest = Request<
 > & {
     user?: {
         id: string;
-        email: string;
+        username: string;
         role: UserRole;
     };
 };
 
 export interface JWTPayload {
     id: string;
-    email: string;
+    username: string;
     role: UserRole;
 }

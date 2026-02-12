@@ -11,13 +11,13 @@ const userRepository = AppDataSource.getRepository(User);
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { email, password } = req.body;
+        const { username, password } = req.body;
 
-        if (!email || !password) {
-            throw new AppError('Email and password are required', 400);
+        if (!username || !password) {
+            throw new AppError('Username and password are required', 400);
         }
 
-        const user = await userRepository.findOne({ where: { email } });
+        const user = await userRepository.findOne({ where: { username } });
 
         if (!user) {
             throw new AppError('Invalid credentials', 401);
@@ -31,7 +31,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
 
         const token = generateToken({
             id: user.id,
-            email: user.email,
+            username: user.username,
             role: user.role,
         });
 
@@ -39,11 +39,13 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
             token,
             user: {
                 id: user.id,
+                username: user.username,
                 email: user.email,
                 name: user.name,
                 role: user.role,
                 bankDetails: user.bankDetails,
                 upiId: user.upiId,
+                mustResetPassword: user.mustResetPassword,
             },
         });
     } catch (error) {
@@ -53,21 +55,22 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
 
 export const createVendor = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { email, password, name, bankDetails, upiId } = req.body;
+        const { username, password, name, email, bankDetails, upiId } = req.body;
 
-        if (!email || !password || !name) {
-            throw new AppError('Email, password, and name are required', 400);
+        if (!username || !password || !name) {
+            throw new AppError('Username, password, and name are required', 400);
         }
 
-        const existingUser = await userRepository.findOne({ where: { email } });
+        const existingUser = await userRepository.findOne({ where: { username } });
 
         if (existingUser) {
-            throw new AppError('User with this email already exists', 400);
+            throw new AppError('User with this username already exists', 400);
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const vendor = userRepository.create({
+            username,
             email,
             password: hashedPassword,
             tempPassword: password, // Store plain text for initial retrieval
@@ -75,6 +78,7 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
             role: UserRole.VENDOR,
             bankDetails,
             upiId,
+            mustResetPassword: true, // Force password reset on first login
         });
 
         await userRepository.save(vendor);
@@ -83,6 +87,7 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
             message: 'Vendor created successfully',
             vendor: {
                 id: vendor.id,
+                username: vendor.username,
                 email: vendor.email,
                 name: vendor.name,
                 role: vendor.role,
@@ -123,7 +128,7 @@ export const getMe = async (req: AuthRequest, res: Response, next: NextFunction)
 
         const user = await userRepository.findOne({
             where: { id: req.user.id },
-            select: ['id', 'email', 'name', 'role', 'bankDetails', 'upiId', 'createdAt'],
+            select: ['id', 'username', 'email', 'name', 'role', 'bankDetails', 'upiId', 'createdAt'],
         });
 
         if (!user) {
@@ -155,6 +160,210 @@ export const getAllVendors = async (req: AuthRequest, res: Response, next: NextF
                 data: vendors,
                 meta: getPaginationMeta(total, page, limit),
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getAdminBankDetails = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        // Fetch super admin user
+        const admin = await userRepository.findOne({
+            where: { role: UserRole.SUPER_ADMIN },
+            select: ['id', 'name', 'bankDetails', 'upiId'],
+        });
+
+        if (!admin) {
+            throw new AppError('Admin not found', 404);
+        }
+
+        // Return only public payment information
+        res.json({
+            admin: {
+                name: admin.name,
+                bankDetails: admin.bankDetails,
+                upiId: admin.upiId,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const updateAdminBankDetails = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+        const { bankDetails, upiId } = req.body;
+
+        if (!userId) {
+            throw new AppError('Unauthorized', 401);
+        }
+
+        // Fetch the user and verify they are super admin
+        const user = await userRepository.findOne({ where: { id: userId } });
+
+        if (!user || user.role !== UserRole.SUPER_ADMIN) {
+            throw new AppError('Only super admin can update bank details', 403);
+        }
+
+        // Update bank details
+        user.bankDetails = bankDetails;
+        user.upiId = upiId;
+
+        await userRepository.save(user);
+
+        res.json({
+            message: 'Bank details updated successfully',
+            admin: {
+                name: user.name,
+                bankDetails: user.bankDetails,
+                upiId: user.upiId,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const resetPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+        const { currentPassword, newPassword } = req.body;
+
+        if (!userId) {
+            throw new AppError('User not authenticated', 401);
+        }
+
+        if (!newPassword) {
+            throw new AppError('New password is required', 400);
+        }
+
+        if (newPassword.length < 8) {
+            throw new AppError('New password must be at least 8 characters long', 400);
+        }
+
+        // Fetch user
+        const user = await userRepository.findOne({ where: { id: userId } });
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        // If current password is provided, verify it
+        // If not provided, allow password change (for first-time resets or admin changes)
+        if (currentPassword) {
+            // Verify current password
+            const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+            if (!isPasswordValid) {
+                throw new AppError('Current password is incorrect', 401);
+            }
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password and reset flag
+        user.password = hashedPassword;
+        user.mustResetPassword = false;
+        user.tempPassword = null as any; // Clear temp password
+
+        await userRepository.save(user);
+
+        res.json({
+            message: 'Password reset successfully',
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                bankDetails: user.bankDetails,
+                upiId: user.upiId,
+                mustResetPassword: user.mustResetPassword,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Check username availability
+export const checkUsernameAvailability = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { username } = req.params;
+        const userId = req.user?.id;
+
+        if (!username) {
+            throw new AppError('Username is required', 400);
+        }
+
+        // Check if username exists (excluding current user)
+        const existingUser = await userRepository.findOne({
+            where: { username }
+        });
+
+        // Username is available if:
+        // 1. No user found with that username, OR
+        // 2. The found user is the current user (they're keeping their username)
+        const available = !existingUser || existingUser.id === userId;
+
+        res.json({ available });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Update user profile (name and username)
+export const updateProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+        const { name, username } = req.body;
+
+        if (!userId) {
+            throw new AppError('Unauthorized', 401);
+        }
+
+        if (!name || !username) {
+            throw new AppError('Name and username are required', 400);
+        }
+
+        // Fetch user
+        const user = await userRepository.findOne({ where: { id: userId } });
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        // If username is changing, check if new username is available
+        if (username !== user.username) {
+            const existingUser = await userRepository.findOne({
+                where: { username }
+            });
+
+            if (existingUser) {
+                throw new AppError('Username already taken', 400);
+            }
+        }
+
+        // Update user
+        user.name = name;
+        user.username = username;
+
+        await userRepository.save(user);
+
+        res.json({
+            message: 'Profile updated successfully',
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                bankDetails: user.bankDetails,
+                upiId: user.upiId,
+                mustResetPassword: user.mustResetPassword,
+            },
         });
     } catch (error) {
         next(error);

@@ -59,6 +59,59 @@ export const createRequest = async (req: AuthRequest, res: Response, next: NextF
     }
 };
 
+export const createAdminWithdrawal = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { amount } = req.body;
+
+        if (!amount) {
+            throw new AppError('Amount is required', 400);
+        }
+
+        // Get super admin user
+        const admin = await userRepository.findOne({
+            where: { role: UserRole.SUPER_ADMIN },
+        });
+
+        if (!admin) {
+            throw new AppError('Admin not found', 404);
+        }
+
+        // Check if admin has bank details or UPI
+        if (!admin.bankDetails && !admin.upiId) {
+            throw new AppError('Admin bank details not configured', 400);
+        }
+
+        // Create withdrawal request on behalf of admin
+        const request = requestRepository.create({
+            type: RequestType.WITHDRAWAL,
+            amount,
+            bankDetails: admin.bankDetails,
+            upiId: admin.upiId,
+            createdById: admin.id,
+            pendingAmount: amount,
+        });
+
+        await requestRepository.save(request);
+
+        // Create log entry
+        await requestLogRepository.save({
+            requestId: request.id,
+            userId: admin.id,
+            action: LogActionType.CREATED,
+            comment: `Admin withdrawal request created for ₹${amount.toLocaleString('en-IN')}`,
+            metadata: { type: RequestType.WITHDRAWAL, amount, createdBy: 'system' },
+        });
+
+        res.status(201).json({
+            message: 'Admin withdrawal request created successfully',
+            request,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
 export const getAllRequestsForAdmin = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
         const { page, limit, skip, take } = getPagination(req.query);
@@ -871,6 +924,27 @@ export const getRequestPaymentSlips = async (req: AuthRequest, res: Response, ne
         });
 
         res.json({ slips });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getPaymentSlipUrl = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { requestId, slipId } = req.params;
+
+        const slip = await paymentSlipRepository.findOne({
+            where: { id: slipId, requestId },
+        });
+
+        if (!slip) {
+            res.status(404).json({ message: 'Payment slip not found' });
+            return;
+        }
+
+        const url = slip.fileUrl;
+
+        res.json({ url });
     } catch (error) {
         next(error);
     }

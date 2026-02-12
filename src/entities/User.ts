@@ -18,6 +18,9 @@ export class User {
     id: string;
 
     @Column({ unique: true })
+    username: string;
+
+    @Column({ nullable: true })
     email: string;
 
     @Column()
@@ -46,6 +49,9 @@ export class User {
 
     @Column({ nullable: true })
     upiId: string;
+
+    @Column({ default: false })
+    mustResetPassword: boolean;
 
     @OneToMany(() => Request, (request) => request.createdBy)
     createdRequests: Request[];

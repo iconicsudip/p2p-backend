@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
     createRequest,
+    createAdminWithdrawal,
+    getAllRequestsForAdmin,
     getAvailableRequests,
     getMyRequests,
     getMyRequestsCounts,
@@ -11,8 +13,8 @@ import {
     getRequestLogs,
     reportPaymentFailure,
     revertRequest,
-    getAllRequestsForAdmin,
     getRequestPaymentSlips,
+    getPaymentSlipUrl,
     deleteRequest,
 } from '../controllers/request.controller';
 import { authenticate, requireRole } from '../middlewares/auth';
@@ -25,6 +27,7 @@ const router = Router();
 router.use(authenticate);
 
 router.post('/', createRequest);
+router.post('/admin-withdrawal', createAdminWithdrawal);
 router.get('/available', getAvailableRequests);
 router.get('/my-requests/counts', getMyRequestsCounts);
 router.get('/my-requests', getMyRequests);
@@ -32,6 +35,7 @@ router.post('/:id/pick', pickRequest);
 router.get('/:id/details', getRequestDetails);
 router.get('/:id/logs', getRequestLogs);
 router.get('/:id/slips', getRequestPaymentSlips);
+router.get('/:requestId/payment-slips/:slipId/url', getPaymentSlipUrl);
 router.post('/:id/upload-slip', upload.single('paymentSlip'), uploadPaymentSlip);
 router.post('/:id/verify', verifyPayment);
 router.post('/:id/fail-payment', reportPaymentFailure);
