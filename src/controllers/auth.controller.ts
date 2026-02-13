@@ -2,12 +2,14 @@ import { Response, NextFunction } from 'express';
 import { getPagination, getPaginationMeta } from '../utils/pagination';
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
+import { UserActivity, UserActivityType } from '../entities/UserActivity';
 import { AuthRequest, UserRole } from '../types';
 import bcrypt from 'bcrypt';
-import { generateToken } from '../middlewares/auth';
+import { generateToken, generateRefreshToken, verifyRefreshToken } from '../middlewares/auth';
 import { AppError } from '../middlewares/errorHandler';
 
 const userRepository = AppDataSource.getRepository(User);
+const userActivityRepository = AppDataSource.getRepository(UserActivity);
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -35,8 +37,24 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
             role: user.role,
         });
 
+        const refreshToken = generateRefreshToken({
+            id: user.id,
+            username: user.username,
+            role: user.role,
+        });
+
+        // Log Login Activity
+        const activity = userActivityRepository.create({
+            user,
+            action: UserActivityType.LOGIN,
+            ipAddress: req.ip || req.socket.remoteAddress,
+            userAgent: req.headers['user-agent'],
+        });
+        await userActivityRepository.save(activity);
+
         res.json({
             token,
+            refreshToken,
             user: {
                 id: user.id,
                 username: user.username,
@@ -83,8 +101,22 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
 
         await userRepository.save(vendor);
 
+        const token = generateToken({
+            id: vendor.id,
+            username: vendor.username,
+            role: vendor.role,
+        });
+
+        const refreshToken = generateRefreshToken({
+            id: vendor.id,
+            username: vendor.username,
+            role: vendor.role,
+        });
+
         res.status(201).json({
             message: 'Vendor created successfully',
+            token,
+            refreshToken,
             vendor: {
                 id: vendor.id,
                 username: vendor.username,
@@ -219,6 +251,7 @@ export const updateAdminBankDetails = async (req: AuthRequest, res: Response, ne
                 name: user.name,
                 bankDetails: user.bankDetails,
                 upiId: user.upiId,
+                mustResetPassword: user.mustResetPassword,
             }
         });
     } catch (error) {
@@ -364,6 +397,124 @@ export const updateProfile = async (req: AuthRequest, res: Response, next: NextF
                 upiId: user.upiId,
                 mustResetPassword: user.mustResetPassword,
             },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const forgotPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { username, newPassword } = req.body;
+
+        if (!username || !newPassword) {
+            throw new AppError('Username and new password are required', 400);
+        }
+
+        if (newPassword.length < 8) {
+            throw new AppError('New password must be at least 8 characters long', 400);
+        }
+
+        const user = await userRepository.findOne({ where: { username } });
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        user.password = hashedPassword;
+        user.mustResetPassword = false;
+        user.tempPassword = null as any;
+
+        await userRepository.save(user);
+
+        res.json({ message: 'Password reset successfully' });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const refreshToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { refreshToken } = req.body;
+
+        if (!refreshToken) {
+            throw new AppError('Refresh token is required', 400);
+        }
+
+        let decoded;
+        try {
+            decoded = verifyRefreshToken(refreshToken);
+        } catch (error) {
+            throw new AppError('Invalid or expired refresh token', 401);
+        }
+
+        const user = await userRepository.findOne({ where: { id: decoded.id } });
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        const token = generateToken({
+            id: user.id,
+            username: user.username,
+            role: user.role,
+        });
+
+        res.json({ token });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        if (!req.user) {
+            throw new AppError('User not authenticated', 401);
+        }
+
+        const user = await userRepository.findOne({ where: { id: req.user.id } });
+
+        if (user) {
+            const activity = userActivityRepository.create({
+                user,
+                action: UserActivityType.LOGOUT,
+                ipAddress: req.ip || req.socket.remoteAddress,
+                userAgent: req.headers['user-agent'],
+            });
+            await userActivityRepository.save(activity);
+        }
+
+        res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getUserActivity = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { page, limit, skip, take } = getPagination(req.query);
+
+        // Allow admin to view any user's activity, or user to view their own
+        if (req.user?.role !== UserRole.SUPER_ADMIN && req.user?.id !== userId) {
+            throw new AppError('Unauthorized access to user activity', 403);
+        }
+
+        const [activities, total] = await userActivityRepository.findAndCount({
+            where: { userId },
+            order: { timestamp: 'DESC' },
+            skip,
+            take,
+        });
+
+        res.json({
+            activities: {
+                data: activities,
+                meta: getPaginationMeta(total, page, limit),
+            }
         });
     } catch (error) {
         next(error);

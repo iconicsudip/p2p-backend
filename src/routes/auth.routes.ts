@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { login, createVendor, getMe, getAllVendors, getVendorCredentials, getAdminBankDetails, updateAdminBankDetails, resetPassword, checkUsernameAvailability, updateProfile } from '../controllers/auth.controller';
+import { login, createVendor, getMe, getAllVendors, getVendorCredentials, getAdminBankDetails, updateAdminBankDetails, resetPassword, checkUsernameAvailability, updateProfile, forgotPassword, refreshToken, logout, getUserActivity } from '../controllers/auth.controller';
 import { authenticate, requireRole } from '../middlewares/auth';
 import { UserRole } from '../types';
 
@@ -15,5 +15,9 @@ router.put('/admin/bank-details', authenticate, requireRole(UserRole.SUPER_ADMIN
 router.post('/reset-password', authenticate, resetPassword);
 router.get('/check-username/:username', checkUsernameAvailability);
 router.put('/profile', authenticate, updateProfile);
+router.post('/forgot-password', forgotPassword);
+router.post('/refresh-token', refreshToken);
+router.post('/logout', authenticate, logout);
+router.get('/activity/:userId', authenticate, getUserActivity);
 
 export default router;
