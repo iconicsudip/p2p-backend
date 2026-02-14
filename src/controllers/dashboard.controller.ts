@@ -4,24 +4,25 @@ import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { AppDataSource } from '../config/database';
 import { Transaction } from '../entities/Transaction';
 import { User } from '../entities/User';
-import { AuthRequest, UserRole, TransactionType } from '../types';
+import { AuthRequest, UserRole, TransactionType, RequestType, RequestStatus } from '../types';
+import { Request as RequestEntity } from '../entities/Request';
 import { AppError } from '../middlewares/errorHandler';
 
 const transactionRepository = AppDataSource.getRepository(Transaction);
 const userRepository = AppDataSource.getRepository(User);
+const requestRepository = AppDataSource.getRepository(RequestEntity);
 
 export const getVendorStats = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const vendorId = req.user!.id;
         const { startDate, endDate } = req.query;
 
-        const where: any = { vendorId };
-
+        const txWhere: any = { vendorId };
         if (startDate && endDate) {
-            where.createdAt = Between(new Date(startDate as string), new Date(endDate as string));
+            txWhere.createdAt = Between(new Date(startDate as string), new Date(endDate as string));
         }
 
-        const transactions = await transactionRepository.find({ where });
+        const transactions = await transactionRepository.find({ where: txWhere });
 
         const totalWithdrawal = transactions
             .filter((t) => t.type === TransactionType.WITHDRAWAL)
@@ -33,10 +34,52 @@ export const getVendorStats = async (req: AuthRequest, res: Response): Promise<v
 
         const netBalance = totalDeposit - totalWithdrawal;
 
+        // Enhanced Stats based on Requests
+        const reqWhere: any = { createdById: vendorId };
+        if (startDate && endDate) {
+            reqWhere.createdAt = Between(new Date(startDate as string), new Date(endDate as string));
+        }
+        const requests = await requestRepository.find({ where: reqWhere });
+
+        const rejectedDeposits = requests.filter(r => r.type === RequestType.DEPOSIT && r.status === RequestStatus.REJECTED);
+        const rejectedDepositsStats = {
+            count: rejectedDeposits.length,
+            amount: rejectedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.PENDING);
+        const pendingWithdrawalsStats = {
+            count: pendingWithdrawals.length,
+            amount: pendingWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const rejectedWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.REJECTED);
+        const rejectedWithdrawalsStats = {
+            count: rejectedWithdrawals.length,
+            amount: rejectedWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const approvedDeposits = requests.filter(r => r.type === RequestType.DEPOSIT && r.status === RequestStatus.COMPLETED);
+        const approvedDepositsStats = {
+            count: approvedDeposits.length,
+            amount: approvedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const approvedWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.COMPLETED);
+        const approvedWithdrawalsStats = {
+            count: approvedWithdrawals.length,
+            amount: approvedWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
         res.json({
             totalWithdrawal,
             totalDeposit,
             netBalance,
+            rejectedDeposits: rejectedDepositsStats,
+            pendingWithdrawals: pendingWithdrawalsStats,
+            rejectedWithdrawals: rejectedWithdrawalsStats,
+            approvedDeposits: approvedDepositsStats,
+            approvedWithdrawals: approvedWithdrawalsStats,
         });
     } catch (error) {
         throw error;
@@ -229,11 +272,59 @@ export const getSystemOverview = async (req: AuthRequest, res: Response): Promis
 
         const totalTransactions = transactions.length;
 
+        // Enhanced Stats based on Requests
+        const requestQuery = requestRepository.createQueryBuilder('r');
+        if (vendorId) {
+            requestQuery.andWhere('(r.createdById = :vendorId OR r.pickedById = :vendorId)', { vendorId });
+        }
+        if (startDate && endDate) {
+            requestQuery.andWhere('r.createdAt BETWEEN :start AND :end', {
+                start: new Date(startDate as string),
+                end: new Date(endDate as string)
+            });
+        }
+        const requests = await requestQuery.getMany();
+
+        const rejectedDeposits = requests.filter(r => r.type === RequestType.DEPOSIT && r.status === RequestStatus.REJECTED);
+        const rejectedDepositsStats = {
+            count: rejectedDeposits.length,
+            amount: rejectedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.PENDING);
+        const pendingWithdrawalsStats = {
+            count: pendingWithdrawals.length,
+            amount: pendingWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const rejectedWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.REJECTED);
+        const rejectedWithdrawalsStats = {
+            count: rejectedWithdrawals.length,
+            amount: rejectedWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const approvedDeposits = requests.filter(r => r.type === RequestType.DEPOSIT && r.status === RequestStatus.COMPLETED);
+        const approvedDepositsStats = {
+            count: approvedDeposits.length,
+            amount: approvedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
+        const approvedWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.COMPLETED);
+        const approvedWithdrawalsStats = {
+            count: approvedWithdrawals.length,
+            amount: approvedWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
+        };
+
         res.json({
             totalWithdrawal,
             totalDeposit,
             totalVendors,
             totalTransactions,
+            rejectedDeposits: rejectedDepositsStats,
+            pendingWithdrawals: pendingWithdrawalsStats,
+            rejectedWithdrawals: rejectedWithdrawalsStats,
+            approvedDeposits: approvedDepositsStats,
+            approvedWithdrawals: approvedWithdrawalsStats,
         });
     } catch (error) {
         throw error;
