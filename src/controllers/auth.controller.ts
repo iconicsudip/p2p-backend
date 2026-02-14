@@ -19,7 +19,9 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
             throw new AppError('Username and password are required', 400);
         }
 
-        const user = await userRepository.findOne({ where: { username } });
+        const normalizedUsername = username.toLowerCase();
+
+        const user = await userRepository.findOne({ where: { username: normalizedUsername } });
 
         if (!user) {
             throw new AppError('Invalid credentials', 401);
@@ -63,7 +65,10 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
                 role: user.role,
                 bankDetails: user.bankDetails,
                 upiId: user.upiId,
+                qrCode: user.qrCode,
                 mustResetPassword: user.mustResetPassword,
+                withdrawalLimitConfig: user.withdrawalLimitConfig,
+                maxWithdrawalLimit: user.maxWithdrawalLimit,
             },
         });
     } catch (error) {
@@ -73,13 +78,13 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
 
 export const createVendor = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { username, password, name, email, bankDetails, upiId } = req.body;
+        const { username, password, name, email, bankDetails, upiId, qrCode } = req.body;
 
         if (!username || !password || !name) {
             throw new AppError('Username, password, and name are required', 400);
         }
 
-        const existingUser = await userRepository.findOne({ where: { username } });
+        const existingUser = await userRepository.findOne({ where: { username: username.toLowerCase() } });
 
         if (existingUser) {
             throw new AppError('User with this username already exists', 400);
@@ -88,7 +93,7 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const vendor = userRepository.create({
-            username,
+            username: username.toLowerCase(),
             email,
             password: hashedPassword,
             tempPassword: password, // Store plain text for initial retrieval
@@ -96,7 +101,10 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
             role: UserRole.VENDOR,
             bankDetails,
             upiId,
+            qrCode,
             mustResetPassword: true, // Force password reset on first login
+            maxWithdrawalLimit: req.body.maxWithdrawalLimit,
+            withdrawalLimitConfig: req.body.withdrawalLimitConfig,
         });
 
         await userRepository.save(vendor);
@@ -123,6 +131,8 @@ export const createVendor = async (req: AuthRequest, res: Response, next: NextFu
                 email: vendor.email,
                 name: vendor.name,
                 role: vendor.role,
+                withdrawalLimitConfig: vendor.withdrawalLimitConfig,
+                maxWithdrawalLimit: vendor.maxWithdrawalLimit,
             },
         });
     } catch (error) {
@@ -160,7 +170,7 @@ export const getMe = async (req: AuthRequest, res: Response, next: NextFunction)
 
         const user = await userRepository.findOne({
             where: { id: req.user.id },
-            select: ['id', 'username', 'email', 'name', 'role', 'bankDetails', 'upiId', 'createdAt'],
+            select: ['id', 'username', 'email', 'name', 'role', 'bankDetails', 'upiId', 'qrCode', 'maxWithdrawalLimit', 'withdrawalLimitConfig', 'createdAt'],
         });
 
         if (!user) {
@@ -181,7 +191,7 @@ export const getAllVendors = async (req: AuthRequest, res: Response, next: NextF
 
         const [vendors, total] = await userRepository.findAndCount({
             where: { role: UserRole.VENDOR },
-            select: ['id', 'email', 'name', 'bankDetails', 'upiId', 'createdAt'],
+            select: ['id', 'email', 'name', 'username', 'bankDetails', 'upiId', 'qrCode', 'maxWithdrawalLimit', 'withdrawalLimitConfig', 'createdAt'],
             order: { createdAt: 'DESC' },
             skip,
             take,
@@ -203,7 +213,7 @@ export const getAdminBankDetails = async (req: AuthRequest, res: Response, next:
         // Fetch super admin user
         const admin = await userRepository.findOne({
             where: { role: UserRole.SUPER_ADMIN },
-            select: ['id', 'name', 'bankDetails', 'upiId'],
+            select: ['id', 'name', 'bankDetails', 'upiId', 'qrCode', 'maxWithdrawalLimit'],
         });
 
         if (!admin) {
@@ -216,6 +226,8 @@ export const getAdminBankDetails = async (req: AuthRequest, res: Response, next:
                 name: admin.name,
                 bankDetails: admin.bankDetails,
                 upiId: admin.upiId,
+                qrCode: admin.qrCode,
+                maxWithdrawalLimit: admin.maxWithdrawalLimit,
             }
         });
     } catch (error) {
@@ -223,10 +235,44 @@ export const getAdminBankDetails = async (req: AuthRequest, res: Response, next:
     }
 };
 
+export const updateVendor = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { name, maxWithdrawalLimit, withdrawalLimitConfig } = req.body;
+
+        const vendor = await userRepository.findOne({ where: { id, role: UserRole.VENDOR } });
+
+        if (!vendor) {
+            throw new AppError('Vendor not found', 404);
+        }
+
+        if (name) vendor.name = name;
+        if (withdrawalLimitConfig) vendor.withdrawalLimitConfig = withdrawalLimitConfig;
+
+        // Handle maxWithdrawalLimit update (allow null/undefined to clear it)
+        if (maxWithdrawalLimit !== undefined) {
+            vendor.maxWithdrawalLimit = maxWithdrawalLimit === '' ? null : maxWithdrawalLimit;
+        }
+
+        await userRepository.save(vendor);
+
+        res.json({
+            message: 'Vendor updated successfully',
+            vendor: {
+                id: vendor.id,
+                name: vendor.name,
+                withdrawalLimitConfig: vendor.withdrawalLimitConfig,
+                maxWithdrawalLimit: vendor.maxWithdrawalLimit,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 export const updateAdminBankDetails = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
         const userId = req.user?.id;
-        const { bankDetails, upiId } = req.body;
+        const { bankDetails, upiId, qrCode, maxWithdrawalLimit } = req.body;
 
         if (!userId) {
             throw new AppError('Unauthorized', 401);
@@ -242,6 +288,10 @@ export const updateAdminBankDetails = async (req: AuthRequest, res: Response, ne
         // Update bank details
         user.bankDetails = bankDetails;
         user.upiId = upiId;
+        user.qrCode = qrCode;
+        if (maxWithdrawalLimit !== undefined) {
+            user.maxWithdrawalLimit = maxWithdrawalLimit === '' ? null : maxWithdrawalLimit;
+        }
 
         await userRepository.save(user);
 
@@ -251,6 +301,8 @@ export const updateAdminBankDetails = async (req: AuthRequest, res: Response, ne
                 name: user.name,
                 bankDetails: user.bankDetails,
                 upiId: user.upiId,
+                qrCode: user.qrCode,
+                maxWithdrawalLimit: user.maxWithdrawalLimit,
                 mustResetPassword: user.mustResetPassword,
             }
         });
@@ -321,87 +373,50 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
     }
 };
 
-// Check username availability
-export const checkUsernameAvailability = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+export const adminResetPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { username } = req.params;
-        const userId = req.user?.id;
-
-        if (!username) {
-            throw new AppError('Username is required', 400);
-        }
-
-        // Check if username exists (excluding current user)
-        const existingUser = await userRepository.findOne({
-            where: { username }
-        });
-
-        // Username is available if:
-        // 1. No user found with that username, OR
-        // 2. The found user is the current user (they're keeping their username)
-        const available = !existingUser || existingUser.id === userId;
-
-        res.json({ available });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Update user profile (name and username)
-export const updateProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        const { name, username } = req.body;
+        const { userId, newPassword } = req.body;
 
         if (!userId) {
-            throw new AppError('Unauthorized', 401);
+            throw new AppError('User ID is required', 400);
         }
 
-        if (!name || !username) {
-            throw new AppError('Name and username are required', 400);
+        if (!newPassword) {
+            throw new AppError('New password is required', 400);
         }
 
-        // Fetch user
+        if (newPassword.length < 6) {
+            throw new AppError('New password must be at least 6 characters long', 400);
+        }
+
         const user = await userRepository.findOne({ where: { id: userId } });
 
         if (!user) {
             throw new AppError('User not found', 404);
         }
 
-        // If username is changing, check if new username is available
-        if (username !== user.username) {
-            const existingUser = await userRepository.findOne({
-                where: { username }
-            });
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-            if (existingUser) {
-                throw new AppError('Username already taken', 400);
-            }
-        }
-
-        // Update user
-        user.name = name;
-        user.username = username;
+        user.password = hashedPassword;
+        user.tempPassword = newPassword; // Store as temp password so admin can view it
+        user.mustResetPassword = true; // Force user to change password on next login
 
         await userRepository.save(user);
 
         res.json({
-            message: 'Profile updated successfully',
+            message: 'Password reset successfully',
             user: {
                 id: user.id,
                 username: user.username,
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                bankDetails: user.bankDetails,
-                upiId: user.upiId,
-                mustResetPassword: user.mustResetPassword,
-            },
+                mustResetPassword: user.mustResetPassword
+            }
         });
     } catch (error) {
         next(error);
     }
 };
+
+
 
 export const forgotPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -415,7 +430,7 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
             throw new AppError('New password must be at least 8 characters long', 400);
         }
 
-        const user = await userRepository.findOne({ where: { username } });
+        const user = await userRepository.findOne({ where: { username: username.toLowerCase() } });
 
         if (!user) {
             throw new AppError('User not found', 404);

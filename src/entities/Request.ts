@@ -64,6 +64,9 @@ export class Request {
     paymentFailureReason: string | null;
 
     @Column({ type: 'text', nullable: true })
+    qrCode: string | null;
+
+    @Column({ type: 'text', nullable: true })
     cancellationReason: string | null;
 
     @ManyToOne(() => User, (user) => user.createdRequests, { eager: true })

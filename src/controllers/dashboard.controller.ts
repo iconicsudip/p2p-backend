@@ -177,7 +177,7 @@ export const getAllVendorsStats = async (req: AuthRequest, res: Response, next: 
                 vendor: {
                     id: vendor.id,
                     name: vendor.name,
-                    email: vendor.email,
+                    username: vendor.username,
                 },
                 totalWithdrawal: s.withdrawal,
                 totalDeposit: s.deposit,

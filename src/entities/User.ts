@@ -6,7 +6,7 @@ import {
     UpdateDateColumn,
     OneToMany,
 } from 'typeorm';
-import { UserRole } from '../types';
+import { UserRole, WithdrawalLimitConfig } from '../types';
 import { Request } from './Request';
 import { Transaction } from './Transaction';
 import { Notification } from './Notification';
@@ -50,8 +50,21 @@ export class User {
     @Column({ nullable: true })
     upiId: string;
 
+    @Column({ type: 'text', nullable: true })
+    qrCode: string;
+
     @Column({ default: false })
     mustResetPassword: boolean;
+
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+    maxWithdrawalLimit: number;
+
+    @Column({
+        type: 'enum',
+        enum: WithdrawalLimitConfig,
+        default: WithdrawalLimitConfig.GLOBAL
+    })
+    withdrawalLimitConfig: WithdrawalLimitConfig;
 
     @OneToMany(() => Request, (request) => request.createdBy)
     createdRequests: Request[];

@@ -1,0 +1,16 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class AddMaximumWithdrawalLimitConfig1771094353233 implements MigrationInterface {
+    name = 'AddMaximumWithdrawalLimitConfig1771094353233'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TYPE "public"."users_withdrawallimitconfig_enum" AS ENUM('GLOBAL', 'CUSTOM', 'UNLIMITED')`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "withdrawalLimitConfig" "public"."users_withdrawallimitconfig_enum" NOT NULL DEFAULT 'GLOBAL'`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "withdrawalLimitConfig"`);
+        await queryRunner.query(`DROP TYPE "public"."users_withdrawallimitconfig_enum"`);
+    }
+
+}

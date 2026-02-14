@@ -9,7 +9,7 @@ import { User } from '../entities/User';
 import { RequestLog } from '../entities/RequestLog';
 import { AuthRequest, RequestType, RequestStatus, TransactionType, NotificationType, UserRole, LogActionType } from '../types';
 import { AppError } from '../middlewares/errorHandler';
-import { Not, In, Between } from 'typeorm';
+import { Not, In, Between, MoreThanOrEqual } from 'typeorm';
 
 const requestRepository = AppDataSource.getRepository(RequestEntity);
 const transactionRepository = AppDataSource.getRepository(Transaction);
@@ -20,7 +20,7 @@ const requestLogRepository = AppDataSource.getRepository(RequestLog);
 
 export const createRequest = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { type, amount, bankDetails, upiId } = req.body;
+        const { type, amount, bankDetails, upiId, qrCode } = req.body;
 
         if (!type || !amount) {
             throw new AppError('Type and amount are required', 400);
@@ -30,11 +30,38 @@ export const createRequest = async (req: AuthRequest, res: Response, next: NextF
             throw new AppError('Invalid request type', 400);
         }
 
+        // Enforce withdrawal limit
+        if (type === RequestType.WITHDRAWAL) {
+            const user = await userRepository.findOne({
+                where: { id: req.user!.id },
+                select: ['withdrawalLimitConfig', 'maxWithdrawalLimit']
+            });
+
+            if (user?.withdrawalLimitConfig === 'UNLIMITED') {
+                // No limit check needed
+            } else if (user?.withdrawalLimitConfig === 'CUSTOM') {
+                if (user.maxWithdrawalLimit && amount > user.maxWithdrawalLimit) {
+                    throw new AppError(`Withdrawal amount cannot exceed your custom limit of ₹${Number(user.maxWithdrawalLimit).toLocaleString('en-IN')}`, 400);
+                }
+            } else {
+                // Fallback to Global Limit
+                const admin = await userRepository.findOne({
+                    where: { role: UserRole.SUPER_ADMIN },
+                    select: ['maxWithdrawalLimit']
+                });
+
+                if (admin && admin.maxWithdrawalLimit && amount > admin.maxWithdrawalLimit) {
+                    throw new AppError(`Withdrawal amount cannot exceed the limit of ₹${Number(admin.maxWithdrawalLimit).toLocaleString('en-IN')}`, 400);
+                }
+            }
+        }
+
         const request = requestRepository.create({
             type,
             amount,
             bankDetails,
             upiId,
+            qrCode,
             createdById: req.user!.id,
             pendingAmount: amount,
         });
@@ -165,7 +192,7 @@ export const getAvailableRequests = async (req: AuthRequest, res: Response, next
     try {
         const { page, limit, skip, take } = getPagination(req.query);
 
-        const { amount, type } = req.query;
+        const { amount, minAmount, type } = req.query;
 
         const where: any = {
             status: RequestStatus.PENDING,
@@ -174,6 +201,10 @@ export const getAvailableRequests = async (req: AuthRequest, res: Response, next
 
         if (amount) {
             where.amount = amount;
+        }
+
+        if (minAmount) {
+            where.amount = MoreThanOrEqual(minAmount);
         }
 
         if (type) {
@@ -216,7 +247,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const createdSkip = (createdPage - 1) * limit;
         const pickedSkip = (pickedPage - 1) * limit;
 
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, status } = req.query;
         let dateFilter = {};
         if (startDate && endDate) {
             dateFilter = {
@@ -228,6 +259,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const [createdRequests, createdTotal] = await requestRepository.findAndCount({
             where: {
                 createdById: req.user!.id,
+                ...(status ? { status: status as RequestStatus } : {}),
                 ...dateFilter
             },
             relations: ['pickedBy', 'paymentSlips'],
@@ -243,6 +275,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                     accountHolderName: true
                 },
                 upiId: true,
+                qrCode: true,
                 paidAmount: true,
                 pendingAmount: true,
                 rejectionReason: true,
@@ -271,6 +304,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const [pickedRequests, pickedTotal] = await requestRepository.findAndCount({
             where: {
                 pickedById: req.user!.id,
+                ...(status ? { status: status as RequestStatus } : {}),
                 ...dateFilter
             },
             relations: ['createdBy', 'paymentSlips'],
@@ -286,6 +320,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                     accountHolderName: true
                 },
                 upiId: true,
+                qrCode: true,
                 paidAmount: true,
                 pendingAmount: true,
                 rejectionReason: true,

@@ -1,9 +1,10 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class InitialEntities1770998310664 implements MigrationInterface {
-    name = 'InitialEntities1770998310664'
+export class InitialEntities1771080127008 implements MigrationInterface {
+    name = 'InitialEntities1771080127008'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TYPE "public"."transactions_type_enum" AS ENUM('WITHDRAWAL', 'DEPOSIT')`);
         await queryRunner.query(`CREATE TABLE "transactions" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "requestId" uuid NOT NULL, "vendorId" uuid NOT NULL, "type" "public"."transactions_type_enum" NOT NULL, "amount" numeric(12,2) NOT NULL, "status" character varying NOT NULL DEFAULT 'COMPLETED', "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_a219afd8dd77ed80f5a862f1db9" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_transactions_request_id" ON "transactions" ("requestId") `);
         await queryRunner.query(`CREATE INDEX "idx_transactions_vendor_id" ON "transactions" ("vendorId") `);
@@ -11,10 +12,13 @@ export class InitialEntities1770998310664 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "idx_transactions_created_at" ON "transactions" ("createdAt") `);
         await queryRunner.query(`CREATE TABLE "payment_slips" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "requestId" uuid NOT NULL, "uploadedById" uuid NOT NULL, "fileUrl" text, "amount" numeric(12,2) NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_82bfb12a1921a64d890591b4982" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_payment_slips_request_id" ON "payment_slips" ("requestId") `);
+        await queryRunner.query(`CREATE TYPE "public"."notifications_type_enum" AS ENUM('REQUEST_PICKED', 'PAYMENT_UPLOADED', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'ADMIN_ALERT', 'PAYMENT_FAILED', 'REQUEST_CANCELLED')`);
         await queryRunner.query(`CREATE TABLE "notifications" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "userId" uuid NOT NULL, "message" text NOT NULL, "type" "public"."notifications_type_enum" NOT NULL, "isRead" boolean NOT NULL DEFAULT false, "requestId" uuid, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_6a72c3c0f683f6462415e653c3a" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_notifications_user_id" ON "notifications" ("userId") `);
         await queryRunner.query(`CREATE INDEX "idx_notifications_is_read" ON "notifications" ("isRead") `);
         await queryRunner.query(`CREATE INDEX "idx_notifications_created_at" ON "notifications" ("createdAt") `);
+        await queryRunner.query(`CREATE TYPE "public"."requests_type_enum" AS ENUM('WITHDRAWAL', 'DEPOSIT')`);
+        await queryRunner.query(`CREATE TYPE "public"."requests_status_enum" AS ENUM('PENDING', 'PICKED', 'PAID_FULL', 'PAID_PARTIAL', 'COMPLETED', 'REJECTED', 'PAYMENT_FAILED')`);
         await queryRunner.query(`CREATE TABLE "requests" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "type" "public"."requests_type_enum" NOT NULL, "amount" numeric(12,2) NOT NULL, "status" "public"."requests_status_enum" NOT NULL DEFAULT 'PENDING', "bankDetails" jsonb, "upiId" text, "paidAmount" numeric(12,2) NOT NULL DEFAULT '0', "pendingAmount" numeric(12,2) NOT NULL DEFAULT '0', "rejectionReason" text, "paymentFailureReason" text, "cancellationReason" text, "createdById" uuid NOT NULL, "pickedById" uuid, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "deletedAt" TIMESTAMP, CONSTRAINT "PK_0428f484e96f9e6a55955f29b5f" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_requests_status" ON "requests" ("status") `);
         await queryRunner.query(`CREATE INDEX "idx_requests_created_by" ON "requests" ("createdById") `);
@@ -22,10 +26,13 @@ export class InitialEntities1770998310664 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "idx_requests_created_at" ON "requests" ("createdAt") `);
         await queryRunner.query(`CREATE INDEX "idx_requests_picked_by_created_at" ON "requests" ("pickedById", "createdAt") `);
         await queryRunner.query(`CREATE INDEX "idx_requests_created_by_created_at" ON "requests" ("createdById", "createdAt") `);
+        await queryRunner.query(`CREATE TYPE "public"."users_role_enum" AS ENUM('SUPER_ADMIN', 'VENDOR')`);
         await queryRunner.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "username" character varying NOT NULL, "email" character varying, "password" character varying NOT NULL, "tempPassword" character varying, "name" character varying NOT NULL, "role" "public"."users_role_enum" NOT NULL DEFAULT 'VENDOR', "bankDetails" jsonb, "upiId" character varying, "mustResetPassword" boolean NOT NULL DEFAULT false, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_fe0bb3f6520ee0469504521e710" UNIQUE ("username"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TYPE "public"."user_activities_action_enum" AS ENUM('LOGIN', 'LOGOUT')`);
         await queryRunner.query(`CREATE TABLE "user_activities" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "userId" uuid NOT NULL, "action" "public"."user_activities_action_enum" NOT NULL, "ipAddress" character varying, "userAgent" text, "timestamp" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_1245d4d2cf04ba7743f2924d951" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_user_activities_user_id" ON "user_activities" ("userId") `);
         await queryRunner.query(`CREATE INDEX "idx_user_activities_created_at" ON "user_activities" ("timestamp") `);
+        await queryRunner.query(`CREATE TYPE "public"."request_logs_action_enum" AS ENUM('CREATED', 'PICKED', 'PAYMENT_UPLOADED', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'PARTIAL_PAYMENT_APPROVED', 'COMPLETED', 'PAYMENT_FAILED', 'REQUEST_REVERTED', 'REQUEST_EDITED', 'REQUEST_CANCELLED')`);
         await queryRunner.query(`CREATE TABLE "request_logs" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "requestId" uuid NOT NULL, "userId" uuid NOT NULL, "action" "public"."request_logs_action_enum" NOT NULL, "comment" text, "metadata" jsonb, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_1edd3815ae37a9b9511f5a26dca" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "idx_request_logs_request_id" ON "request_logs" ("requestId") `);
         await queryRunner.query(`CREATE INDEX "idx_request_logs_user_id" ON "request_logs" ("userId") `);
@@ -59,10 +66,13 @@ export class InitialEntities1770998310664 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX "public"."idx_request_logs_user_id"`);
         await queryRunner.query(`DROP INDEX "public"."idx_request_logs_request_id"`);
         await queryRunner.query(`DROP TABLE "request_logs"`);
+        await queryRunner.query(`DROP TYPE "public"."request_logs_action_enum"`);
         await queryRunner.query(`DROP INDEX "public"."idx_user_activities_created_at"`);
         await queryRunner.query(`DROP INDEX "public"."idx_user_activities_user_id"`);
         await queryRunner.query(`DROP TABLE "user_activities"`);
+        await queryRunner.query(`DROP TYPE "public"."user_activities_action_enum"`);
         await queryRunner.query(`DROP TABLE "users"`);
+        await queryRunner.query(`DROP TYPE "public"."users_role_enum"`);
         await queryRunner.query(`DROP INDEX "public"."idx_requests_created_by_created_at"`);
         await queryRunner.query(`DROP INDEX "public"."idx_requests_picked_by_created_at"`);
         await queryRunner.query(`DROP INDEX "public"."idx_requests_created_at"`);
@@ -70,10 +80,13 @@ export class InitialEntities1770998310664 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX "public"."idx_requests_created_by"`);
         await queryRunner.query(`DROP INDEX "public"."idx_requests_status"`);
         await queryRunner.query(`DROP TABLE "requests"`);
+        await queryRunner.query(`DROP TYPE "public"."requests_status_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."requests_type_enum"`);
         await queryRunner.query(`DROP INDEX "public"."idx_notifications_created_at"`);
         await queryRunner.query(`DROP INDEX "public"."idx_notifications_is_read"`);
         await queryRunner.query(`DROP INDEX "public"."idx_notifications_user_id"`);
         await queryRunner.query(`DROP TABLE "notifications"`);
+        await queryRunner.query(`DROP TYPE "public"."notifications_type_enum"`);
         await queryRunner.query(`DROP INDEX "public"."idx_payment_slips_request_id"`);
         await queryRunner.query(`DROP TABLE "payment_slips"`);
         await queryRunner.query(`DROP INDEX "public"."idx_transactions_created_at"`);
@@ -81,6 +94,7 @@ export class InitialEntities1770998310664 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX "public"."idx_transactions_vendor_id"`);
         await queryRunner.query(`DROP INDEX "public"."idx_transactions_request_id"`);
         await queryRunner.query(`DROP TABLE "transactions"`);
+        await queryRunner.query(`DROP TYPE "public"."transactions_type_enum"`);
     }
 
 }

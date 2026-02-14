@@ -11,6 +11,12 @@ export enum RequestType {
     DEPOSIT = 'DEPOSIT',
 }
 
+export enum WithdrawalLimitConfig {
+    GLOBAL = 'GLOBAL',
+    CUSTOM = 'CUSTOM',
+    UNLIMITED = 'UNLIMITED',
+}
+
 export enum RequestStatus {
     PENDING = 'PENDING',
     PICKED = 'PICKED',
