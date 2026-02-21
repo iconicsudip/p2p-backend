@@ -47,7 +47,7 @@ export const getVendorStats = async (req: AuthRequest, res: Response): Promise<v
             amount: rejectedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
         };
 
-        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.PENDING);
+        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && [RequestStatus.PENDING, RequestStatus.PICKED, RequestStatus.PAID_FULL, RequestStatus.PAID_PARTIAL].includes(r.status));
         const pendingWithdrawalsStats = {
             count: pendingWithdrawals.length,
             amount: pendingWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
@@ -291,7 +291,7 @@ export const getSystemOverview = async (req: AuthRequest, res: Response): Promis
             amount: rejectedDeposits.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)
         };
 
-        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && r.status === RequestStatus.PENDING);
+        const pendingWithdrawals = requests.filter(r => r.type === RequestType.WITHDRAWAL && [RequestStatus.PENDING, RequestStatus.PICKED, RequestStatus.PAID_FULL, RequestStatus.PAID_PARTIAL].includes(r.status));
         const pendingWithdrawalsStats = {
             count: pendingWithdrawals.length,
             amount: pendingWithdrawals.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0)

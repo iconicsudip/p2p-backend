@@ -160,7 +160,12 @@ export const getAllRequestsForAdmin = async (req: AuthRequest, res: Response, ne
         }
 
         if (status) {
-            query.andWhere('request.status = :status', { status });
+            const statusArray = (status as string).split(',');
+            if (statusArray.length > 1) {
+                query.andWhere('request.status IN (:...statusArray)', { statusArray });
+            } else {
+                query.andWhere('request.status = :status', { status });
+            }
         }
 
         if (type) {
@@ -259,7 +264,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const [createdRequests, createdTotal] = await requestRepository.findAndCount({
             where: {
                 createdById: req.user!.id,
-                ...(status ? { status: status as RequestStatus } : {}),
+                ...(status ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
                 ...dateFilter
             },
             relations: ['pickedBy', 'paymentSlips'],
@@ -304,7 +309,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const [pickedRequests, pickedTotal] = await requestRepository.findAndCount({
             where: {
                 pickedById: req.user!.id,
-                ...(status ? { status: status as RequestStatus } : {}),
+                ...(status ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
                 ...dateFilter
             },
             relations: ['createdBy', 'paymentSlips'],
