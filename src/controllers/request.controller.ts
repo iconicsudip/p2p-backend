@@ -291,6 +291,8 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                 pendingAmount: true,
                 rejectionReason: true,
                 paymentFailureReason: true,
+                cancellationReason: true,
+                cancelledByAdmin: true,
                 createdById: true,
                 createdAt: true,
                 pickedBy: {
@@ -338,6 +340,8 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                 pendingAmount: true,
                 rejectionReason: true,
                 paymentFailureReason: true,
+                cancellationReason: true,
+                cancelledByAdmin: true,
                 pickedById: true, // Needed for createdBy relation check?
                 createdAt: true,
                 createdBy: {
@@ -1019,8 +1023,11 @@ export const deleteRequest = async (req: AuthRequest, res: Response, next: NextF
             throw new AppError('Only pending requests can be deleted', 400);
         }
 
-        // Update cancellation reason
+        // Update cancellation reason and admin flag
         request.cancellationReason = reason || 'No reason provided';
+        if (req.user!.role === UserRole.SUPER_ADMIN && request.createdById !== req.user!.id) {
+            request.cancelledByAdmin = true;
+        }
         await requestRepository.save(request);
 
         // Fetch user for log name

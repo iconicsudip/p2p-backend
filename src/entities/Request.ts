@@ -69,6 +69,9 @@ export class Request {
     @Column({ type: 'text', nullable: true })
     cancellationReason: string | null;
 
+    @Column({ type: 'boolean', default: false })
+    cancelledByAdmin: boolean;
+
     @ManyToOne(() => User, (user) => user.createdRequests, { eager: true })
     @JoinColumn({ name: 'createdById' })
     createdBy: User;
