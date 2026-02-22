@@ -9,7 +9,7 @@ import { User } from '../entities/User';
 import { RequestLog } from '../entities/RequestLog';
 import { AuthRequest, RequestType, RequestStatus, TransactionType, NotificationType, UserRole, LogActionType } from '../types';
 import { AppError } from '../middlewares/errorHandler';
-import { Not, In, Between, MoreThanOrEqual } from 'typeorm';
+import { Not, In, Between, MoreThanOrEqual, IsNull } from 'typeorm';
 
 const requestRepository = AppDataSource.getRepository(RequestEntity);
 const transactionRepository = AppDataSource.getRepository(Transaction);
@@ -159,7 +159,9 @@ export const getAllRequestsForAdmin = async (req: AuthRequest, res: Response, ne
             });
         }
 
-        if (status) {
+        if (status === 'CANCELLED') {
+            query.withDeleted().andWhere('request.deletedAt IS NOT NULL');
+        } else if (status) {
             const statusArray = (status as string).split(',');
             if (statusArray.length > 1) {
                 query.andWhere('request.status IN (:...statusArray)', { statusArray });
@@ -260,13 +262,17 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
             };
         }
 
+        const isCancelledStatus = status === 'CANCELLED';
+
         // Use query builder to select specific fields and avoid fetching large blobs in relations
         const [createdRequests, createdTotal] = await requestRepository.findAndCount({
             where: {
                 createdById: req.user!.id,
-                ...(status ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
+                ...(status && !isCancelledStatus ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
+                ...(isCancelledStatus ? { deletedAt: Not(IsNull()) } : {}),
                 ...dateFilter
             },
+            ...(isCancelledStatus ? { withDeleted: true } : {}),
             relations: ['pickedBy', 'paymentSlips'],
             select: {
                 id: true,
@@ -309,9 +315,11 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
         const [pickedRequests, pickedTotal] = await requestRepository.findAndCount({
             where: {
                 pickedById: req.user!.id,
-                ...(status ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
+                ...(status && !isCancelledStatus ? { status: (status as string).includes(',') ? In((status as string).split(',')) : (status as RequestStatus) } : {}),
+                ...(isCancelledStatus ? { deletedAt: Not(IsNull()) } : {}),
                 ...dateFilter
             },
+            ...(isCancelledStatus ? { withDeleted: true } : {}),
             relations: ['createdBy', 'paymentSlips'],
             select: {
                 id: true,
@@ -1003,7 +1011,7 @@ export const deleteRequest = async (req: AuthRequest, res: Response, next: NextF
             throw new AppError('Request not found', 404);
         }
 
-        if (request.createdById !== req.user!.id) {
+        if (request.createdById !== req.user!.id && req.user!.role !== UserRole.SUPER_ADMIN) {
             throw new AppError('You are not authorized to delete this request', 403);
         }
 
