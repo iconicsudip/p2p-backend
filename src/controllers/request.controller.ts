@@ -295,6 +295,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                 cancelledByAdmin: true,
                 createdById: true,
                 createdAt: true,
+                deletedAt: true,
                 pickedBy: {
                     id: true,
                     name: true,
@@ -344,6 +345,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response, next: NextF
                 cancelledByAdmin: true,
                 pickedById: true, // Needed for createdBy relation check?
                 createdAt: true,
+                deletedAt: true,
                 createdBy: {
                     id: true,
                     name: true,
